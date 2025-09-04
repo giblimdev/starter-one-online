@@ -1,0 +1,267 @@
+// Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//////////////////////////////
+/////      Settings       /////
+//////////////////////////////
+
+model AppSettings {
+  id        String   @id @default(cuid())
+  site      String   @default("StarterOne")
+  logo      String   @default("logo.png")
+  menu      Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("appsettings")
+}
+
+model UserSettings {
+  id        String   @id @default(cuid())
+  theme     String   @default("light") // "light" | "dark" | "system" | "perso1" | "perso2"
+  language  String   @default("fr")
+  timezone  String   @default("Europe/Paris")
+  currency  String   @default("EUR")
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("usersettings")
+}
+
+////////////////////////
+/////     Auth     /////
+////////////////////////
+
+model User {
+  id            String   @id @default(cuid())
+  pseudo        String?
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  role          String?  @default("USER") // Role dans le site ("ADMIN", "USER", etc.)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions     Session[]
+  accounts     Account[]
+  userSettings UserSettings?
+  Team         Team[]
+  TeamMembers  TeamMembers[] @relation("UserTeams")
+  BlogPost     BlogPost[]
+  likes        Like[]
+
+  @@map("user")
+}
+
+/// Modèle des rôles utilisateur, avec permissions associées
+model UserRole {
+  id             String        @id @default(cuid())
+  role           String // Exemple : "ADMIN", "CONTRIBUTEUR", "USER", "MODERATOR"
+  authorizations String[] // Liste des autorisations associées au rôle, ex:
+  // SharePoint: ["FULL_CONTROL", "CREAT", "EDIT", "DELETE", "SHARE", "APPROVE", "VIEW" ]
+  // Jira: ["BROWSE_PROJECTS", "CREATE_ISSUES", "EDIT_ISSUES", "DELETE_ISSUES", "ASSIGN_ISSUES", "ADMINISTER_PROJECTS"]
+  TeamMembers    TeamMembers[]
+
+  /**
+   * Exemples de rôles et permissions pour copier/coller et adapter :
+   * # SharePoint Roles (Permissions)
+   * "FULL_CONTROL"       = Accès complet à tout
+   * "DESIGN"             = Modifier la structure des listes et bibliothèques
+   * "CONTRIBUTE"         = Ajouter, modifier et supprimer des éléments dans des listes ou bibliothèques
+   * "READ"               = Lire les éléments seulement
+   * "LIMITED_ACCESS"     = Accès limité pour supporter d'autres permissions
+   * # Jira Roles (Permissions)
+   * "ADMINISTRATOR"      = Gestion complète du projet et des utilisateurs
+   * "DEVELOPER"          = Créer, modifier, assigner et commenter des tickets
+   * "REPORTER"           = Créer et commenter des tickets
+   * "USER"               = Accès aux fonctions de base sans privilèges d'administration
+   */
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+////////////////////////////
+/////     HelpDev      /////
+////////////////////////////
+
+model Gallery {
+  id        String   @id @default(cuid())
+  imageUrl  String // ou base 64 selon le besoin
+  caption   String?
+  order     Int      @default(10) // Pour ordonner les images dans l'affichage
+  teamId    String // Référence à l'équipe associée
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("gallery")
+}
+
+model HelpDev {
+  // Table pour stocker les données de la page d'aide au développement
+  // Utilise un champ JSON pour stocker les sections et leur contenu 
+  // Le front permettra de gérer l'affichage et le contenu des sections
+  id String @id @default(cuid())
+
+  title String? // Titre de la section
+
+  section  Json      @default("[]")
+  order    Int       @default(0) // Pour ordonner les sections dans l'affichage
+  parentId String? // Référence optionnelle vers la section parente
+  parent   HelpDev?  @relation("HelpDevHierarchy", fields: [parentId], references: [id])
+  children HelpDev[] @relation("HelpDevHierarchy")
+
+  @@map("helpdev")
+}
+
+model BlogPost {
+  id              String     @id @default(cuid())
+  title           String? //si title = null, c'est un message de chat 
+  content         String
+  authorId        String
+  author          User       @relation(fields: [authorId], references: [id])
+  teams           Team[]
+  isPublished     Boolean    @default(false)
+  publicationDate DateTime?
+  order           Int        @default(0) // Pour ordonner les posts dans l'affichage
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  likes           Like[]
+  parentId        String? // un post avec un parentId est une réponse à un autre post
+  parent          BlogPost?  @relation("BlogPostHierarchy", fields: [parentId], references: [id])
+  children        BlogPost[] @relation("BlogPostHierarchy")
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId]) // Un utilisateur ne peut liker un post qu'une seule fois
+  @@map("like")
+}
+
+model Glossary {
+  id         String   @id @default(cuid())
+  term       String
+  definition Json
+  order      Int      @default(0) // Pour ordonner les termes dans l'affichage
+  createdAt  DateTime @default(now())
+
+  @@map("glossary")
+}
+
+//////////////////////////
+/////     Teams      /////
+//////////////////////////
+
+model Team {
+  id          String        @id @default(cuid())
+  name        String
+  Images      String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  order       Int           @default(5) // Pour ordonner les sections dans l'affichage
+  parentId    String? // Id optionnel du parent (null = racine)
+  parent      Team?         @relation("TeamHierarchy", fields: [parentId], references: [id])
+  children    Team[]        @relation("TeamHierarchy")
+  ownerId     String // Propriétaire de l'équipe (user)
+  owner       User          @relation(fields: [ownerId], references: [id])
+  TeamMembers TeamMembers[]
+  BlogPost    BlogPost[]
+  gallery     Gallery[] // Pour stocker une galerie d'images liée à l'équipe
+
+  @@map("team")
+}
+
+model TeamMembers {
+  id        String    @id @default(cuid())
+  userId    String
+  teamId    String
+  roleId    String?
+  role      UserRole? @relation(fields: [roleId], references: [id]) // Role et autorisations dans l'application
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation("UserTeams", fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@map("teammembers")
+}
+
+//////////////////////////////
+/////     TestTables      /////
+//////////////////////////////
+
+// Table de test pour démonstration
+
+model TestTable {
+  id          String   @id @default(cuid())
+  name        String
+  order       Int
+  description String?
+  isActive    Boolean  @default(true)
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("test_table")
+}
